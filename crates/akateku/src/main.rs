@@ -20,7 +20,7 @@ struct App {
 }
 impl App {
     fn new() -> Self {
-        let page = Document::from_local_html(WELCOME, 1000, 650);
+        let page = Document::from_local_html(WELCOME, 1000, 540);
         Self {
             tabs: vec![Tab {
                 address: "akateku:welcome".into(),
@@ -37,7 +37,7 @@ impl App {
     fn new_tab(&mut self) {
         self.tabs.push(Tab {
             address: "akateku:welcome".into(),
-            page: Document::from_local_html(WELCOME, self.width, self.height.saturating_sub(110)),
+            page: Document::from_local_html(WELCOME, self.width, self.height.saturating_sub(220)),
         });
         self.active = self.tabs.len() - 1;
         self.input = self.tabs[self.active].address.clone();
@@ -51,7 +51,7 @@ impl App {
                 page: Document::from_local_html(
                     WELCOME,
                     self.width,
-                    self.height.saturating_sub(110),
+                    self.height.saturating_sub(220),
                 ),
             };
             self.status = "Welcome page".into();
@@ -92,7 +92,7 @@ impl App {
             self.status = "File must be UTF-8".into();
             return;
         };
-        let page = Document::from_local_html(&html, self.width, self.height.saturating_sub(110));
+        let page = Document::from_local_html(&html, self.width, self.height.saturating_sub(220));
         self.tabs[self.active] = Tab {
             address: canonical.display().to_string(),
             page,
@@ -199,6 +199,18 @@ mod win {
     #[link(name = "gdi32")]
     unsafe extern "system" {
         fn CreateSolidBrush(color: u32) -> Handle;
+        fn CreateRoundRectRgn(
+            left: i32,
+            top: i32,
+            right: i32,
+            bottom: i32,
+            ellipse_w: i32,
+            ellipse_h: i32,
+        ) -> Handle;
+        fn FillRgn(h: Handle, region: Handle, brush: Handle) -> i32;
+        fn SaveDC(h: Handle) -> i32;
+        fn RestoreDC(h: Handle, saved: i32) -> i32;
+        fn IntersectClipRect(h: Handle, left: i32, top: i32, right: i32, bottom: i32) -> i32;
         fn DeleteObject(o: Handle) -> i32;
         fn FillRect(h: Handle, r: *const Rect, brush: Handle) -> i32;
         fn SetBkMode(h: Handle, mode: i32) -> i32;
@@ -244,6 +256,16 @@ mod win {
         FillRect(h, &r, b);
         DeleteObject(b);
     }
+    unsafe fn round_rect(h: Handle, x: i32, y: i32, w: i32, height: i32, radius: i32, c: Color) {
+        if w <= 0 || height <= 0 {
+            return;
+        }
+        let region = CreateRoundRectRgn(x, y, x + w, y + height, radius * 2, radius * 2);
+        let brush = CreateSolidBrush(rgb(c));
+        FillRgn(h, region, brush);
+        DeleteObject(brush);
+        DeleteObject(region);
+    }
     unsafe fn text(h: Handle, x: i32, y: i32, s: &str, size: u32, c: Color) {
         let face = wide("Segoe UI");
         let font = CreateFontW(
@@ -271,61 +293,112 @@ mod win {
         DeleteObject(font);
     }
     unsafe fn draw(h: Handle, a: &App) {
-        rect(
-            h,
-            0,
-            0,
-            a.width as i32,
-            a.height as i32,
-            Color(246, 247, 251),
-        );
-        rect(h, 0, 0, a.width as i32, 94, Color(31, 36, 52));
+        let width = a.width as i32;
+        let height = a.height as i32;
+        let graphite = Color(29, 34, 42);
+        let raised = Color(43, 50, 60);
+        let muted = Color(161, 174, 190);
+        let mint = Color(105, 218, 188);
+        rect(h, 0, 0, width, height, Color(231, 235, 240));
+        rect(h, 0, 0, width, 160, graphite);
+        round_rect(h, 16, 11, 34, 32, 10, mint);
+        text(h, 26, 17, "A", 18, graphite);
+        text(h, 60, 15, "AKATEKU", 18, Color(247, 249, 250));
+        text(h, 169, 19, "BROWSER", 11, muted);
+        text(h, width - 168, 19, "PATAPIM  /  M0", 11, mint);
+        rect(h, 0, 47, width, 1, Color(61, 70, 82));
         for (i, t) in a.tabs.iter().enumerate().take(6) {
-            let x = 12 + i as i32 * 174;
-            rect(
+            let x = 16 + i as i32 * 184;
+            round_rect(
                 h,
                 x,
-                8,
-                166,
-                31,
+                55,
+                176,
+                37,
+                11,
                 if i == a.active {
-                    Color(69, 74, 98)
+                    Color(234, 239, 243)
                 } else {
-                    Color(43, 48, 66)
+                    raised
+                },
+            );
+            round_rect(
+                h,
+                x + 11,
+                66,
+                7,
+                7,
+                3,
+                if i == a.active {
+                    Color(40, 159, 137)
+                } else {
+                    mint
                 },
             );
             text(
                 h,
-                x + 12,
-                14,
+                x + 26,
+                64,
                 if t.address == "akateku:welcome" {
                     "New tab"
                 } else {
                     "Local page"
                 },
                 14,
-                Color(239, 240, 248),
+                if i == a.active {
+                    graphite
+                } else {
+                    Color(221, 229, 234)
+                },
             );
         }
-        text(h, 12, 52, "+", 22, Color(194, 187, 248));
-        rect(
+        let plus_x = 16 + a.tabs.len().min(6) as i32 * 184;
+        if plus_x + 38 < width {
+            round_rect(h, plus_x, 55, 37, 37, 11, raised);
+            text(h, plus_x + 11, 58, "+", 23, mint);
+        }
+        round_rect(h, 16, 105, 52, 42, 13, raised);
+        text(h, 23, 118, "Home", 12, Color(213, 223, 230));
+        round_rect(
             h,
-            50,
-            48,
-            (a.width as i32 - 124).max(20),
-            34,
-            Color(252, 252, 255),
+            78,
+            104,
+            (width - 172).max(20),
+            44,
+            14,
+            Color(239, 243, 246),
         );
+        round_rect(h, 91, 118, 15, 15, 7, Color(66, 163, 141));
+        round_rect(h, 95, 122, 7, 7, 3, Color(239, 243, 246));
         let shown = if a.editing {
             &a.input
         } else {
             &a.tabs[a.active].address
         };
-        text(h, 62, 55, shown, 15, Color(35, 40, 56));
-        rect(h, a.width as i32 - 64, 48, 52, 34, Color(114, 95, 221));
-        text(h, a.width as i32 - 53, 55, "Go", 15, Color(255, 255, 255));
-        rect(h, 0, 94, a.width as i32, 1, Color(205, 207, 219));
-        for p in &a.tabs[a.active].page.display_list {
+        text(h, 116, 115, shown, 15, Color(37, 48, 59));
+        round_rect(h, width - 82, 104, 66, 44, 14, mint);
+        text(h, width - 63, 115, "Go", 15, graphite);
+        round_rect(
+            h,
+            12,
+            172,
+            (width - 24).max(1),
+            (height - 220).max(1),
+            18,
+            Color(208, 215, 223),
+        );
+        round_rect(
+            h,
+            13,
+            171,
+            (width - 26).max(1),
+            (height - 220).max(1),
+            18,
+            Color(255, 255, 255),
+        );
+        let saved = SaveDC(h);
+        IntersectClipRect(h, 22, 177, width - 22, height - 55);
+        for p in a.tabs[a.active].page.display_list.iter().skip(1) {
             match p {
                 Paint::Rect {
                     x,
@@ -333,29 +406,24 @@ mod win {
                     w,
                     h: height,
                     color,
-                } => rect(h, *x, *y + 95, *w as i32, *height as i32, *color),
+                } => rect(h, *x, *y + 171, *w as i32, *height as i32, *color),
                 Paint::Text {
                     x,
                     y,
                     text: s,
                     size,
                     color,
-                } => text(h, *x, *y + 95, s, *size, *color),
+                } => text(h, *x, *y + 171, s, *size, *color),
             }
         }
-        rect(
-            h,
-            0,
-            a.height as i32 - 26,
-            a.width as i32,
-            26,
-            Color(232, 234, 242),
-        );
+        RestoreDC(h, saved);
+        rect(h, 0, height - 38, width, 38, Color(222, 227, 234));
+        round_rect(h, 16, height - 27, 7, 7, 3, Color(53, 165, 139));
         let m = &a.tabs[a.active].page.metrics;
         text(
             h,
-            12,
-            a.height as i32 - 21,
+            32,
+            height - 28,
             &format!(
                 "{} | nodes {} | commands {} | parse {:.2} ms | layout {:.2} ms",
                 a.status,
@@ -365,7 +433,7 @@ mod win {
                 m.layout.as_secs_f64() * 1000.0
             ),
             12,
-            Color(74, 78, 100),
+            Color(75, 87, 99),
         );
     }
     unsafe extern "system" fn proc(w: Handle, m: u32, a: usize, b: isize) -> isize {
@@ -380,7 +448,7 @@ mod win {
                     s.width = (b as u32 & 0xffff).max(1);
                     s.height = ((b as u32 >> 16) & 0xffff).max(1);
                     let width = s.width;
-                    let height = s.height.saturating_sub(121);
+                    let height = s.height.saturating_sub(220);
                     for t in &mut s.tabs {
                         t.page.resize(width, height)
                     }
@@ -441,19 +509,24 @@ mod win {
                     let mut s = state.lock().unwrap();
                     let x = (b as u32 & 0xffff) as i32;
                     let y = ((b as u32 >> 16) & 0xffff) as i32;
-                    if y < 42 && x >= 12 {
-                        let i = ((x - 12) / 174) as usize;
+                    if (55..92).contains(&y) && x >= 16 {
+                        let i = ((x - 16) / 184) as usize;
                         if i < s.tabs.len() {
                             s.active = i;
                             s.input = s.tabs[i].address.clone();
                             s.editing = false
+                        } else if i == s.tabs.len() && x < 16 + (i as i32) * 184 + 37 {
+                            s.new_tab();
                         }
-                    } else if (48..82).contains(&y) {
-                        if x >= s.width as i32 - 64 {
+                    } else if (104..148).contains(&y) {
+                        if x >= s.width as i32 - 82 {
                             s.navigate()
-                        } else if x >= 50 {
+                        } else if x >= 78 {
                             s.editing = true;
                             s.input = s.tabs[s.active].address.clone()
+                        } else if x >= 16 {
+                            s.input = "akateku:welcome".into();
+                            s.navigate();
                         }
                     }
                 }
