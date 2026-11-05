@@ -11,7 +11,7 @@ cargo run -p akateku
 
 Use `Ctrl+T` for a new tab and `Ctrl+L` for the address bar. Enter a local UTF-8 `.html` path of at most 1 MiB, or `akateku:welcome`. Network and JavaScript are disabled. The status strip shows parse/layout time, node count and display command count. These are diagnostics, not performance claims.
 
-Graphite M0 uses a charcoal, slate and mint palette with rounded tabs, controls and page surface. The Home button returns to the welcome page. This is a first visual direction; theme tokens, accessibility and HiDPI work are scheduled for later milestones.
+Graphite M0 uses a charcoal, slate and mint palette with antialiased rounded tabs, controls and page surface. The Home button returns to the welcome page. This is a first visual direction; theme tokens, accessibility and HiDPI work are scheduled for later milestones.
 
 ## M0 contract
 

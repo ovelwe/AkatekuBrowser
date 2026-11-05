@@ -167,6 +167,13 @@ mod win {
         menu: *const u16,
         name: *const u16,
     }
+    #[repr(C)]
+    struct GdiPlusStartupInput {
+        version: u32,
+        callback: Handle,
+        suppress_background_thread: i32,
+        suppress_external_codecs: i32,
+    }
     #[link(name = "user32")]
     unsafe extern "system" {
         fn RegisterClassW(c: *const WndClass) -> u16;
@@ -199,15 +206,6 @@ mod win {
     #[link(name = "gdi32")]
     unsafe extern "system" {
         fn CreateSolidBrush(color: u32) -> Handle;
-        fn CreateRoundRectRgn(
-            left: i32,
-            top: i32,
-            right: i32,
-            bottom: i32,
-            ellipse_w: i32,
-            ellipse_h: i32,
-        ) -> Handle;
-        fn FillRgn(h: Handle, region: Handle, brush: Handle) -> i32;
         fn SaveDC(h: Handle) -> i32;
         fn RestoreDC(h: Handle, saved: i32) -> i32;
         fn IntersectClipRect(h: Handle, left: i32, top: i32, right: i32, bottom: i32) -> i32;
@@ -233,6 +231,33 @@ mod win {
             face: *const u16,
         ) -> Handle;
         fn SelectObject(h: Handle, o: Handle) -> Handle;
+    }
+    #[link(name = "gdiplus")]
+    unsafe extern "system" {
+        fn GdiplusStartup(
+            token: *mut usize,
+            input: *const GdiPlusStartupInput,
+            output: Handle,
+        ) -> i32;
+        fn GdiplusShutdown(token: usize);
+        fn GdipCreateFromHDC(hdc: Handle, graphics: *mut Handle) -> i32;
+        fn GdipDeleteGraphics(graphics: Handle) -> i32;
+        fn GdipSetSmoothingMode(graphics: Handle, mode: i32) -> i32;
+        fn GdipCreatePath(fill_mode: i32, path: *mut Handle) -> i32;
+        fn GdipAddPathArcI(
+            path: Handle,
+            x: i32,
+            y: i32,
+            w: i32,
+            h: i32,
+            start: f32,
+            sweep: f32,
+        ) -> i32;
+        fn GdipClosePathFigure(path: Handle) -> i32;
+        fn GdipDeletePath(path: Handle) -> i32;
+        fn GdipCreateSolidFill(argb: u32, brush: *mut Handle) -> i32;
+        fn GdipDeleteBrush(brush: Handle) -> i32;
+        fn GdipFillPath(graphics: Handle, brush: Handle, path: Handle) -> i32;
     }
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -260,11 +285,31 @@ mod win {
         if w <= 0 || height <= 0 {
             return;
         }
-        let region = CreateRoundRectRgn(x, y, x + w, y + height, radius * 2, radius * 2);
-        let brush = CreateSolidBrush(rgb(c));
-        FillRgn(h, region, brush);
-        DeleteObject(brush);
-        DeleteObject(region);
+        let mut graphics = null::<c_void>() as Handle;
+        if GdipCreateFromHDC(h, &mut graphics) != 0 {
+            rect(h, x, y, w, height, c);
+            return;
+        }
+        GdipSetSmoothingMode(graphics, 4); // SmoothingModeAntiAlias
+        let mut path = null::<c_void>() as Handle;
+        let mut brush = null::<c_void>() as Handle;
+        if GdipCreatePath(0, &mut path) == 0 {
+            let diameter = (radius * 2).min(w).min(height).max(1);
+            let right = x + w - diameter;
+            let bottom = y + height - diameter;
+            GdipAddPathArcI(path, x, y, diameter, diameter, 180.0, 90.0);
+            GdipAddPathArcI(path, right, y, diameter, diameter, 270.0, 90.0);
+            GdipAddPathArcI(path, right, bottom, diameter, diameter, 0.0, 90.0);
+            GdipAddPathArcI(path, x, bottom, diameter, diameter, 90.0, 90.0);
+            GdipClosePathFigure(path);
+            let argb = 0xff00_0000 | ((c.0 as u32) << 16) | ((c.1 as u32) << 8) | c.2 as u32;
+            if GdipCreateSolidFill(argb, &mut brush) == 0 {
+                GdipFillPath(graphics, brush, path);
+                GdipDeleteBrush(brush);
+            }
+            GdipDeletePath(path);
+        }
+        GdipDeleteGraphics(graphics);
     }
     unsafe fn text(h: Handle, x: i32, y: i32, s: &str, size: u32, c: Color) {
         let face = wide("Segoe UI");
@@ -280,7 +325,7 @@ mod win {
             1,
             0,
             0,
-            0,
+            5, // CLEARTYPE_QUALITY
             0,
             face.as_ptr(),
         );
@@ -539,6 +584,17 @@ mod win {
     pub fn run() {
         unsafe {
             STATE.set(Mutex::new(App::new())).ok();
+            let mut gdip_token = 0usize;
+            let gdip_input = GdiPlusStartupInput {
+                version: 1,
+                callback: null::<c_void>() as Handle,
+                suppress_background_thread: 0,
+                suppress_external_codecs: 0,
+            };
+            if GdiplusStartup(&mut gdip_token, &gdip_input, null::<c_void>() as Handle) != 0 {
+                eprintln!("GDI+ startup failed");
+                return;
+            }
             let name = wide("AkatekuGraphite");
             let title = wide("AkatekuBrowser — Patapim M0");
             let instance = GetModuleHandleW(null());
@@ -556,6 +612,7 @@ mod win {
             };
             if RegisterClassW(&class) == 0 {
                 eprintln!("RegisterClassW failed");
+                GdiplusShutdown(gdip_token);
                 return;
             }
             let w = CreateWindowExW(
@@ -574,6 +631,7 @@ mod win {
             );
             if w.is_null() {
                 eprintln!("CreateWindowExW failed");
+                GdiplusShutdown(gdip_token);
                 return;
             }
             ShowWindow(w, 1);
@@ -591,6 +649,7 @@ mod win {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
+            GdiplusShutdown(gdip_token);
         }
     }
 }
