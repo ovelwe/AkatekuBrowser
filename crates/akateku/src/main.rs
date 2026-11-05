@@ -1,5 +1,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
-use patapim::{Color, Document, Paint};
+use patapim::Document;
+#[cfg(windows)]
+use patapim::{Color, Paint};
 use std::path::Path;
 
 const WELCOME: &str = include_str!("../assets/welcome.html");
