@@ -1,4 +1,6 @@
-//! Patapim M0: a small renderer for trusted local documents only.
+//! Patapim M1: a bounded local-document renderer with its own retained DOM.
+mod parser;
+pub use parser::{parse, ParseError, MAX_DOM_DEPTH, MAX_DOM_NODES, MAX_HTML_BYTES};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
@@ -63,9 +65,9 @@ impl Default for Style {
 }
 
 impl Document {
-    pub fn from_local_html(html: &str, width: u32, height: u32) -> Self {
+    pub fn from_local_html(html: &str, width: u32, height: u32) -> Result<Self, ParseError> {
         let start = Instant::now();
-        let root = parse(html);
+        let root = parse(html)?;
         let parse = start.elapsed();
         let mut doc = Self {
             root,
@@ -77,7 +79,7 @@ impl Document {
             viewport: (width, height),
         };
         doc.rebuild();
-        doc
+        Ok(doc)
     }
     pub fn resize(&mut self, width: u32, height: u32) {
         if self.viewport != (width, height) {
@@ -112,110 +114,6 @@ impl Document {
     }
 }
 
-pub fn parse(input: &str) -> Node {
-    let limit = input.len().min(1024 * 1024);
-    let safe = input.floor_char_boundary(limit);
-    let mut pos = 0;
-    let mut budget = 20_000;
-    Node::Element {
-        tag: "document".into(),
-        style: String::new(),
-        children: children(&input[..safe], &mut pos, None, 0, &mut budget),
-    }
-}
-fn children(
-    s: &str,
-    pos: &mut usize,
-    closing: Option<&str>,
-    depth: usize,
-    budget: &mut usize,
-) -> Vec<Node> {
-    let mut out = vec![];
-    while *pos < s.len() && *budget > 0 && depth < 64 {
-        if s[*pos..].starts_with("<!--") {
-            *pos += s[*pos..].find("-->").map_or(s.len() - *pos, |n| n + 3);
-            continue;
-        }
-        if s[*pos..].starts_with('<') {
-            let Some(n) = s[*pos..].find('>') else { break };
-            let raw = s[*pos + 1..*pos + n].trim();
-            *pos += n + 1;
-            if let Some(end) = raw.strip_prefix('/') {
-                if closing.is_some_and(|c| end.trim().eq_ignore_ascii_case(c)) {
-                    break;
-                }
-                continue;
-            }
-            let tag = raw
-                .split(|c: char| c.is_whitespace() || c == '/')
-                .next()
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if !matches!(
-                tag.as_str(),
-                "html"
-                    | "body"
-                    | "div"
-                    | "p"
-                    | "h1"
-                    | "h2"
-                    | "h3"
-                    | "span"
-                    | "strong"
-                    | "em"
-                    | "ul"
-                    | "li"
-                    | "br"
-            ) {
-                if matches!(
-                    tag.as_str(),
-                    "script" | "style" | "iframe" | "object" | "svg"
-                ) {
-                    let needle = format!("</{tag}>");
-                    let tail = s[*pos..].to_ascii_lowercase();
-                    *pos += tail.find(&needle).map_or(tail.len(), |n| n + needle.len());
-                }
-                continue;
-            }
-            let style = attr(raw, "style").unwrap_or_default();
-            *budget -= 1;
-            let kids = if tag == "br" || raw.ends_with('/') {
-                vec![]
-            } else {
-                children(s, pos, Some(&tag), depth + 1, budget)
-            };
-            out.push(Node::Element {
-                tag,
-                style,
-                children: kids,
-            });
-        } else {
-            let end = s[*pos..].find('<').map_or(s.len(), |n| *pos + n);
-            let value = s[*pos..end]
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&quot;", "\"")
-                .replace("&amp;", "&");
-            *pos = end;
-            if !value.trim().is_empty() {
-                *budget -= 1;
-                out.push(Node::Text(value));
-            }
-        }
-    }
-    out
-}
-fn attr(raw: &str, key: &str) -> Option<String> {
-    let lower = raw.to_ascii_lowercase();
-    let at = lower.find(&format!("{key}="))? + key.len() + 1;
-    let tail = raw.get(at..)?;
-    let quote = tail.chars().next()?;
-    if quote != '\'' && quote != '"' {
-        return None;
-    }
-    let value = &tail[1..];
-    Some(value[..value.find(quote)?].into())
-}
 fn color(s: &str) -> Option<Color> {
     let hex = s.strip_prefix('#')?;
     if hex.len() != 6 {
@@ -367,7 +265,8 @@ mod tests {
             "<h1 style=\"color:#ff0000\">Hello</h1><p>A &amp; B</p>",
             640,
             480,
-        );
+        )
+        .unwrap();
         assert!(d.metrics.nodes >= 5);
         assert!(d
             .display_list
@@ -376,13 +275,14 @@ mod tests {
     }
     #[test]
     fn resize_rebuilds() {
-        let mut d = Document::from_local_html("<p>Hello</p>", 320, 200);
+        let mut d = Document::from_local_html("<p>Hello</p>", 320, 200).unwrap();
         d.resize(640, 200);
         assert!(matches!(d.display_list[0], Paint::Rect { w: 640, .. }));
     }
     #[test]
     fn script_content_is_inert() {
-        let d = Document::from_local_html("<script>alert(1)</script><p>Safe</p>", 320, 200);
+        let d =
+            Document::from_local_html("<script>alert(1)</script><p>Safe</p>", 320, 200).unwrap();
         assert!(!d
             .display_list
             .iter()

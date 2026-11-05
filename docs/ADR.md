@@ -14,3 +14,6 @@ Patapim emits platform-neutral rectangle/text commands; Windows presents them th
 
 ## ADR-005: event-driven shell
 Win32 sleeps between messages, with no periodic repaint loop. Adaptive scheduling follows workload measurement and X-Ray instrumentation.
+
+## ADR-006: HTML5 parsing in M1a
+Supersedes ADR-003 for parser dependencies. Use html5ever 0.39.0 with its compatible RcDom 0.39.0+unofficial intermediary, then convert to Patapim Node. Current html5ever 0.40.1 was evaluated but does not match this intermediary's dependency series. RcDom is test-oriented and temporary; it must not become a trusted web-content boundary. See PARSER.md for limits, evidence and replacement gate.

@@ -13,6 +13,6 @@
 | M8 | Compositor/performance | Tiles, CPU/GPU selection, background policy, fair Firefox/Chromium comparison |
 | M9 | Beta and Linux | Signed updates, Linux sandbox parity, security response, compatibility bar |
 
-Next: replace M0 parser with a maintained HTML tokenizer/tree builder once dependencies can be fetched, add fuzzing, accurate text measurement and reference screenshots. Keep network navigation disabled; add renderer separation before expanding content trust.
+M1a implemented: HTML5 parsing through a pinned compatible library pair, conversion to Patapim DOM, explicit input/tree/depth errors, bounded file reads, malformed-input regression tests and a short fuzz CI target. M1 remains open: the temporary RcDom intermediary must be replaced by a bounded custom TreeSink, CSS needs conformance fixtures, and fuzz campaigns need broader corpora and longer runs. Accurate text measurement and reference screenshots follow in M2. Keep network navigation disabled; add renderer separation before expanding content trust.
 
 Risks: web compatibility scope, parser/layout security bugs, platform-specific sandbox gaps, GPU overhead, font/accessibility complexity and security maintenance capacity. Every milestone must measure its own claim.

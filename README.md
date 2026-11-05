@@ -25,4 +25,4 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-There are no external Rust dependencies in M0. The library builds cross platform; the window is Windows only. See [specification](docs/SPEC.md), [ADRs](docs/ADR.md), [threat model](docs/THREAT_MODEL.md) and [roadmap](docs/ROADMAP.md).
+M1a uses pinned html5ever 0.39.0 and markup5ever_rcdom 0.39.0+unofficial for HTML5 tree construction before converting to Patapim's own retained DOM. The library builds cross platform; the window is Windows only. See [parser limits](docs/PARSER.md), [specification](docs/SPEC.md), [ADRs](docs/ADR.md), [threat model](docs/THREAT_MODEL.md) and [roadmap](docs/ROADMAP.md).

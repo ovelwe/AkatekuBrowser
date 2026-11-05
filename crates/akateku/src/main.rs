@@ -2,6 +2,7 @@
 use patapim::Document;
 #[cfg(windows)]
 use patapim::{Color, Paint};
+use std::io::Read;
 use std::path::Path;
 
 const WELCOME: &str = include_str!("../assets/welcome.html");
@@ -20,7 +21,7 @@ struct App {
 }
 impl App {
     fn new() -> Self {
-        let page = Document::from_local_html(WELCOME, 1000, 540);
+        let page = Document::from_local_html(WELCOME, 1000, 540).expect("built-in welcome HTML");
         Self {
             tabs: vec![Tab {
                 address: "akateku:welcome".into(),
@@ -37,7 +38,8 @@ impl App {
     fn new_tab(&mut self) {
         self.tabs.push(Tab {
             address: "akateku:welcome".into(),
-            page: Document::from_local_html(WELCOME, self.width, self.height.saturating_sub(220)),
+            page: Document::from_local_html(WELCOME, self.width, self.height.saturating_sub(220))
+                .expect("built-in welcome HTML"),
         });
         self.active = self.tabs.len() - 1;
         self.input = self.tabs[self.active].address.clone();
@@ -52,7 +54,8 @@ impl App {
                     WELCOME,
                     self.width,
                     self.height.saturating_sub(220),
-                ),
+                )
+                .expect("built-in welcome HTML"),
             };
             self.status = "Welcome page".into();
             return;
@@ -68,6 +71,15 @@ impl App {
             .strip_prefix("file:///")
             .unwrap_or(&address)
             .replace('/', "\\");
+        let bytes = path.as_bytes();
+        if bytes.len() < 3
+            || !bytes[0].is_ascii_alphabetic()
+            || bytes[1] != b':'
+            || bytes[2] != b'\\'
+        {
+            self.status = "Enter an absolute local drive path, such as D:\\page.html".into();
+            return;
+        }
         let Ok(canonical) = Path::new(&path).canonicalize() else {
             self.status = "File not found".into();
             return;
@@ -88,11 +100,27 @@ impl App {
             self.status = "File exceeds 1 MiB limit".into();
             return;
         }
-        let Ok(html) = std::fs::read_to_string(&canonical) else {
+        let Ok(file) = std::fs::File::open(&canonical) else {
+            self.status = "Cannot open file".into();
+            return;
+        };
+        let mut html = String::new();
+        if file
+            .take(patapim::MAX_HTML_BYTES as u64 + 1)
+            .read_to_string(&mut html)
+            .is_err()
+        {
             self.status = "File must be UTF-8".into();
             return;
         };
-        let page = Document::from_local_html(&html, self.width, self.height.saturating_sub(220));
+        let page =
+            match Document::from_local_html(&html, self.width, self.height.saturating_sub(220)) {
+                Ok(page) => page,
+                Err(error) => {
+                    self.status = error.to_string();
+                    return;
+                }
+            };
         self.tabs[self.active] = Tab {
             address: canonical.display().to_string(),
             page,

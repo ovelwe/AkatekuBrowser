@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/patapim", "crates/akateku"]
+exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.package]
